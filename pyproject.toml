@@ -9,9 +9,11 @@ description = "Agente inteligente de escritorio para Windows"
 requires-python = ">=3.12"
 dependencies = [
     "faster-whisper",
+    "httpx",
     "sounddevice",
     "numpy",
     "nvidia-cudnn-cu12>=9,<10; platform_system == 'Windows'",
+    "pydantic",
 ]
 
 [tool.setuptools.packages.find]
