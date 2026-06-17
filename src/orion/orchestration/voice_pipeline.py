@@ -17,6 +17,7 @@ from orion.llm.models import (
     IntentParseResult,
     IntentType,
 )
+from orion.llm.ollama_client import OllamaClient
 from orion.models import ToolResult
 from orion.orchestration.action_router import route_intent_to_action
 from orion.policy.engine import PolicyEngine
@@ -49,6 +50,8 @@ AUDIT_LOG: list["VoicePipelineAuditRecord"] = []
 @dataclass(frozen=True, slots=True)
 class VoicePipelineAuditRecord:
     timestamp: str
+    session_id: str | None
+    turn_number: int | None
     capture_mode: str
     transcript: str
     normalized_text: str
@@ -83,6 +86,8 @@ class VoicePipelineResult:
     execution_attempted: bool = False
     audit_record: VoicePipelineAuditRecord | None = None
     error_stage: str | None = None
+    session_id: str | None = None
+    turn_number: int | None = None
 
 
 class VoicePipeline:
@@ -90,6 +95,7 @@ class VoicePipeline:
         self,
         voice_listener: Callable[[], VoiceResult] = listen_once,
         intent_interpreter: Callable[[str], IntentParseResult] = interpret_intent,
+        ollama_client: OllamaClient | None = None,
         policy_engine: PolicyEngine | None = None,
         execution_service: ExecutionService | None = None,
         action_router: Callable[
@@ -100,7 +106,6 @@ class VoicePipeline:
         registry = build_default_registry()
 
         self.voice_listener = voice_listener
-        self.intent_interpreter = intent_interpreter
         self.policy_engine = policy_engine or PolicyEngine(
             registry=registry,
         )
@@ -109,9 +114,23 @@ class VoicePipeline:
         )
         self.action_router = action_router
 
+        if intent_interpreter is interpret_intent:
+            self.ollama_client = ollama_client or OllamaClient()
+            self.intent_interpreter = (
+                lambda text: interpret_intent(
+                    text,
+                    client=self.ollama_client,
+                )
+            )
+        else:
+            self.ollama_client = ollama_client
+            self.intent_interpreter = intent_interpreter
+
     def run(
         self,
         execution_enabled: bool = False,
+        session_id: str | None = None,
+        turn_number: int | None = None,
     ) -> VoicePipelineResult:
         total_started_at = perf_counter()
         timings = _empty_timings()
@@ -136,6 +155,8 @@ class VoicePipeline:
                 success=False,
                 message=f"Fallo la captura o transcripcion: {error}",
                 error_stage="capture_transcription",
+                session_id=session_id,
+                turn_number=turn_number,
             )
 
         _merge_voice_timings(
@@ -164,6 +185,8 @@ class VoicePipeline:
                 success=False,
                 message=voice_result.message,
                 error_stage="capture_transcription",
+                session_id=session_id,
+                turn_number=turn_number,
             )
 
         if not transcript:
@@ -186,6 +209,8 @@ class VoicePipeline:
                     "no ejecutare ninguna accion."
                 ),
                 error_stage="capture_transcription",
+                session_id=session_id,
+                turn_number=turn_number,
             )
 
         llm_started_at = perf_counter()
@@ -221,6 +246,8 @@ class VoicePipeline:
                     )
                     else "llm"
                 ),
+                session_id=session_id,
+                turn_number=turn_number,
             )
         except Exception as error:
             timings["llm"] = _milliseconds(
@@ -242,6 +269,8 @@ class VoicePipeline:
                 success=False,
                 message=f"Fallo la interpretacion: {error}",
                 error_stage="application",
+                session_id=session_id,
+                turn_number=turn_number,
             )
 
         interpretation = llm_result.interpretation
@@ -326,6 +355,8 @@ class VoicePipeline:
             error_stage=_result_error_stage(
                 tool_result=tool_result,
             ),
+            session_id=session_id,
+            turn_number=turn_number,
         )
 
     def _finalize(
@@ -342,8 +373,12 @@ class VoicePipeline:
         success: bool,
         message: str,
         error_stage: str | None = None,
+        session_id: str | None = None,
+        turn_number: int | None = None,
     ) -> VoicePipelineResult:
         audit_record = _build_audit_record(
+            session_id=session_id,
+            turn_number=turn_number,
             capture_mode=capture_mode,
             transcript=transcript,
             interpretation=interpretation,
@@ -372,10 +407,14 @@ class VoicePipeline:
             execution_attempted=execution_attempted,
             audit_record=audit_record,
             error_stage=error_stage,
+            session_id=session_id,
+            turn_number=turn_number,
         )
 
 
 def _build_audit_record(
+    session_id: str | None,
+    turn_number: int | None,
     capture_mode: str,
     transcript: str,
     interpretation: IntentInterpretation | None,
@@ -389,6 +428,8 @@ def _build_audit_record(
 ) -> VoicePipelineAuditRecord:
     return VoicePipelineAuditRecord(
         timestamp=datetime.now(timezone.utc).isoformat(),
+        session_id=session_id,
+        turn_number=turn_number,
         capture_mode=capture_mode,
         transcript=transcript,
         normalized_text=(
@@ -513,6 +554,12 @@ def _result_message(
         return (
             interpretation.clarification_question
             or "No pude determinar una accion segura."
+        )
+
+    if interpretation.intent is IntentType.END_SESSION:
+        return (
+            interpretation.assistant_reply
+            or "Sesion finalizada."
         )
 
     if action_request is None:

@@ -11,6 +11,7 @@ class IntentType(str, Enum):
     CONVERSATION = "conversation"
     OPEN_APPLICATION = "open_application"
     UNKNOWN = "unknown"
+    END_SESSION = "end_session"
 
 
 class OllamaIntentPayload(BaseModel):
@@ -39,6 +40,14 @@ class OllamaIntentPayload(BaseModel):
         ):
             raise ValueError(
                 "unknown debe solicitar aclaracion."
+            )
+
+        if (
+            self.intent is IntentType.END_SESSION
+            and self.application_name is not None
+        ):
+            raise ValueError(
+                "end_session no acepta application_name."
             )
 
         if (

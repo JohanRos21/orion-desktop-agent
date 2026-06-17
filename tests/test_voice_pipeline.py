@@ -5,6 +5,8 @@ from orion.llm.models import (
     IntentInterpretation,
     IntentParseResult,
     IntentType,
+    OllamaIntentPayload,
+    OllamaIntentPayloadResult,
 )
 from orion.models import ToolResult
 from orion.orchestration import voice_pipeline
@@ -65,6 +67,27 @@ def test_unknown_does_not_execute() -> None:
     assert result.action_request is None
     assert result.execution_attempted is False
     assert result.message == "Que accion quieres realizar?"
+    assert execution_service.calls == []
+
+
+def test_end_session_does_not_route_policy_or_execute() -> None:
+    execution_service = _FakeExecutionService()
+    result = _pipeline(
+        interpretation=IntentInterpretation(
+            original_text="hasta luego Orion",
+            normalized_text="hasta luego orion",
+            intent=IntentType.END_SESSION,
+            assistant_reply="Hasta luego.",
+        ),
+        policy_engine=_ExplodingPolicyEngine(),
+        execution_service=execution_service,
+    ).run(execution_enabled=True)
+
+    assert result.action_request is None
+    assert result.policy_decision is None
+    assert result.tool_result is None
+    assert result.execution_attempted is False
+    assert result.message == "Hasta luego."
     assert execution_service.calls == []
 
 
@@ -304,6 +327,78 @@ def test_audit_record_is_created() -> None:
     assert result.audit_record.llm_ms == 30.0
 
 
+def test_session_metadata_is_copied_to_result_and_audit() -> None:
+    result = _pipeline(
+        interpretation=_open_application_interpretation(
+            text="Abre la calculadora",
+            application_name="calculadora",
+        ),
+    ).run(
+        execution_enabled=False,
+        session_id="session-123",
+        turn_number=7,
+    )
+
+    assert result.session_id == "session-123"
+    assert result.turn_number == 7
+    assert result.audit_record is not None
+    assert result.audit_record.session_id == "session-123"
+    assert result.audit_record.turn_number == 7
+
+
+def test_default_pipeline_reuses_one_ollama_client(
+    monkeypatch,
+) -> None:
+    clients: list[_FakeOllamaClient] = []
+    transcripts = iter(
+        [
+            "Hola Orion",
+            "hasta luego Orion",
+        ]
+    )
+
+    def listener() -> VoiceResult:
+        return _voice_result(
+            transcript=next(transcripts),
+        )
+
+    def fake_client_factory() -> "_FakeOllamaClient":
+        client = _FakeOllamaClient()
+        clients.append(
+            client,
+        )
+        return client
+
+    monkeypatch.setattr(
+        voice_pipeline,
+        "OllamaClient",
+        fake_client_factory,
+    )
+
+    pipeline = VoicePipeline(
+        voice_listener=listener,
+        execution_service=_FakeExecutionService(),
+    )
+
+    first = pipeline.run(
+        execution_enabled=False,
+        session_id="session-123",
+        turn_number=1,
+    )
+    second = pipeline.run(
+        execution_enabled=False,
+        session_id="session-123",
+        turn_number=2,
+    )
+
+    assert len(clients) == 1
+    assert clients[0].calls == 2
+    assert first.interpretation is not None
+    assert first.interpretation.intent is IntentType.CONVERSATION
+    assert second.interpretation is not None
+    assert second.interpretation.intent is IntentType.END_SESSION
+
+
 def test_dangerous_original_text_is_blocked_without_partial_execution() -> None:
     execution_service = _FakeExecutionService()
     result = _pipeline(
@@ -409,3 +504,43 @@ class _StaticPolicyEngine:
         action_request,
     ) -> PolicyDecision:
         return self.decision
+
+
+class _ExplodingPolicyEngine:
+    def evaluate(
+        self,
+        action_request,
+    ) -> PolicyDecision:
+        raise AssertionError(
+            "end_session no debe evaluar politica"
+        )
+
+
+class _FakeOllamaClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def interpret_messages(
+        self,
+        messages,
+    ) -> OllamaIntentPayloadResult:
+        self.calls += 1
+        text = messages[-1]["content"]
+
+        if "hasta luego" in text.casefold():
+            payload = OllamaIntentPayload(
+                normalized_text="hasta luego orion",
+                intent=IntentType.END_SESSION,
+                assistant_reply="Hasta luego.",
+            )
+        else:
+            payload = OllamaIntentPayload(
+                normalized_text="hola orion",
+                intent=IntentType.CONVERSATION,
+                assistant_reply="Hola.",
+            )
+
+        return OllamaIntentPayloadResult(
+            payload=payload,
+            duration_ms=5.0,
+        )

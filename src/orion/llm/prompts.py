@@ -14,6 +14,7 @@ Valores permitidos para intent:
 - conversation
 - open_application
 - unknown
+- end_session
 
 Reconoce errores razonables de transcripcion por contexto. Estos textos
 deben interpretarse como abrir la aplicacion calculadora:
@@ -38,6 +39,19 @@ Si el texto es realmente incomprensible, por ejemplo "Prondo", usa:
 Si el usuario conversa, por ejemplo "Hola Orion, como estas?", usa:
 - intent: conversation
 - assistant_reply: una respuesta breve en espanol
+
+Si el usuario quiere terminar ORION o dejar de escuchar, por ejemplo
+"salir", "cierra Orion", "termina la sesion",
+"ya puedes dejar de escuchar", "hasta luego Orion" o
+"finaliza la sesion", usa:
+- intent: end_session
+- application_name: null
+- needs_clarification: false
+- assistant_reply: una despedida breve en espanol
+
+No clasifiques como end_session solicitudes para cerrar una aplicacion,
+por ejemplo "cierra la calculadora" o "cierra PowerShell". Como
+close_application todavia no existe, usa unknown y solicita aclaracion.
 
 Normaliza normalized_text en minusculas, sin acentos innecesarios y con
 espacios limpios.

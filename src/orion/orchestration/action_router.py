@@ -14,6 +14,7 @@ def route_intent_to_action(
     if interpretation.intent in {
         IntentType.CONVERSATION,
         IntentType.UNKNOWN,
+        IntentType.END_SESSION,
     }:
         return None
 

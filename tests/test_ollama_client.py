@@ -90,6 +90,33 @@ def test_ollama_client_parses_valid_response(
     assert result.duration_ms >= 0
 
 
+def test_ollama_client_parses_end_session_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ollama_client.httpx,
+        "Client",
+        _client_factory(
+            _response(
+                _chat_payload(
+                    {
+                        "normalized_text": "hasta luego orion",
+                        "intent": "end_session",
+                        "assistant_reply": "Hasta luego.",
+                    }
+                )
+            )
+        ),
+    )
+
+    result = OllamaClient().interpret_messages(
+        [{"role": "user", "content": "hasta luego Orion"}]
+    )
+
+    assert result.payload.intent is IntentType.END_SESSION
+    assert result.payload.application_name is None
+
+
 def test_interpret_intent_builds_domain_model_from_ollama_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -402,6 +429,10 @@ def test_ollama_client_sends_required_payload(
     assert isinstance(payload["format"], dict)
     assert payload["format"]["title"] == "OllamaIntentPayload"
     assert "original_text" not in json.dumps(
+        payload["format"],
+        ensure_ascii=False,
+    )
+    assert "end_session" in json.dumps(
         payload["format"],
         ensure_ascii=False,
     )

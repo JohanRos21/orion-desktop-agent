@@ -102,3 +102,25 @@ def test_ollama_intent_payload_keeps_existing_validations() -> None:
             normalized_text="prondo",
             intent=IntentType.UNKNOWN,
         )
+
+
+def test_end_session_is_valid_without_application() -> None:
+    interpretation = IntentInterpretation(
+        original_text="termina la sesion",
+        normalized_text="termina la sesion",
+        intent=IntentType.END_SESSION,
+        assistant_reply="Hasta luego.",
+    )
+
+    assert interpretation.intent is IntentType.END_SESSION
+    assert interpretation.application_name is None
+    assert interpretation.needs_clarification is False
+
+
+def test_end_session_rejects_application_name() -> None:
+    with pytest.raises(ValidationError):
+        OllamaIntentPayload(
+            normalized_text="cierra calculadora",
+            intent=IntentType.END_SESSION,
+            application_name="calculadora",
+        )

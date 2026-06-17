@@ -28,6 +28,17 @@ def test_unknown_does_not_create_action() -> None:
     assert route_intent_to_action(interpretation) is None
 
 
+def test_end_session_does_not_create_action() -> None:
+    interpretation = IntentInterpretation(
+        original_text="hasta luego Orion",
+        normalized_text="hasta luego orion",
+        intent=IntentType.END_SESSION,
+        assistant_reply="Hasta luego.",
+    )
+
+    assert route_intent_to_action(interpretation) is None
+
+
 def test_open_application_creates_action_request() -> None:
     interpretation = IntentInterpretation(
         original_text="Aperir la calculadora",
