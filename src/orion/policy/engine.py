@@ -6,31 +6,16 @@ from orion.policy.models import (
     PolicyDecision,
     PolicyDecisionType,
 )
-from orion.tools.applications import normalize_text
+from orion.tools.applications import (
+    ApplicationValidationError,
+    validate_application_request,
+)
 from orion.tools.contracts import (
     ALLOWED_ACTION_SOURCES,
     ActionRequest,
     RiskLevel,
 )
 from orion.tools.registry import ToolRegistry
-
-
-_SHELL_PATTERNS = (
-    "&&",
-    "||",
-    ";",
-    "|",
-    ">",
-    "<",
-    "powershell",
-    "cmd.exe",
-)
-
-_PATH_PATTERNS = (
-    "\\",
-    "/",
-    ":",
-)
 
 
 class PolicyEngine:
@@ -163,41 +148,15 @@ def _validate_open_application(
     arguments: dict[str, object],
     original_text: str,
 ) -> str | None:
-    application_name = arguments.get(
-        "application_name"
-    )
-
-    if not isinstance(application_name, str):
-        return "application_name debe ser texto"
-
-    normalized_name = normalize_text(
-        application_name
-    )
-
-    if not normalized_name:
-        return "application_name no puede estar vacio"
-
-    casefolded_name = application_name.casefold()
-
-    if any(
-        pattern in casefolded_name
-        for pattern in _SHELL_PATTERNS
-    ):
-        return "application_name parece contener comandos de shell"
-
-    original_text_casefolded = original_text.casefold()
-
-    if any(
-        pattern in original_text_casefolded
-        for pattern in _SHELL_PATTERNS
-    ):
-        return "texto original parece contener comandos de shell"
-
-    if any(
-        pattern in application_name
-        for pattern in _PATH_PATTERNS
-    ):
-        return "application_name parece una ruta o comando"
+    try:
+        validate_application_request(
+            application_name=arguments.get(
+                "application_name"
+            ),
+            original_text=original_text,
+        )
+    except ApplicationValidationError as error:
+        return str(error)
 
     return None
 
