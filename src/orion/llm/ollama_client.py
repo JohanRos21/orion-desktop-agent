@@ -18,8 +18,8 @@ from orion.llm.exceptions import (
     OllamaTimeoutError,
 )
 from orion.llm.models import (
-    IntentInterpretation,
-    IntentParseResult,
+    OllamaIntentPayload,
+    OllamaIntentPayloadResult,
 )
 
 
@@ -76,7 +76,7 @@ class OllamaClient:
     def interpret_messages(
         self,
         messages: list[dict[str, str]],
-    ) -> IntentParseResult:
+    ) -> OllamaIntentPayloadResult:
         payload = self._build_payload(
             messages=messages,
         )
@@ -116,12 +116,12 @@ class OllamaClient:
                 response=response,
             )
 
-        interpretation = self._parse_response(
+        intent_payload = self._parse_response(
             response=response,
         )
 
-        return IntentParseResult(
-            interpretation=interpretation,
+        return OllamaIntentPayloadResult(
+            payload=intent_payload,
             duration_ms=duration_ms,
         )
 
@@ -134,7 +134,7 @@ class OllamaClient:
             "stream": False,
             "think": False,
             "keep_alive": self.keep_alive,
-            "format": IntentInterpretation.model_json_schema(),
+            "format": OllamaIntentPayload.model_json_schema(),
             "messages": messages,
             "options": {
                 "temperature": 0,
@@ -144,7 +144,7 @@ class OllamaClient:
     def _parse_response(
         self,
         response: httpx.Response,
-    ) -> IntentInterpretation:
+    ) -> OllamaIntentPayload:
         try:
             response_payload = response.json()
         except ValueError as error:
@@ -158,11 +158,11 @@ class OllamaClient:
 
         try:
             if isinstance(content, str):
-                return IntentInterpretation.model_validate_json(
+                return OllamaIntentPayload.model_validate_json(
                     content
                 )
 
-            return IntentInterpretation.model_validate(
+            return OllamaIntentPayload.model_validate(
                 content
             )
         except (ValidationError, ValueError, TypeError) as error:

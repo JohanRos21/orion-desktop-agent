@@ -39,9 +39,9 @@ Si el usuario conversa, por ejemplo "Hola Orion, como estas?", usa:
 - intent: conversation
 - assistant_reply: una respuesta breve en espanol
 
-Preserva original_text exactamente como fue recibido.
 Normaliza normalized_text en minusculas, sin acentos innecesarios y con
 espacios limpios.
+No incluyas original_text en la respuesta.
 """.strip()
 
 

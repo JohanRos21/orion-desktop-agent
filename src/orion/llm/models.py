@@ -13,10 +13,9 @@ class IntentType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class IntentInterpretation(BaseModel):
+class OllamaIntentPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    original_text: str
     normalized_text: str
     intent: IntentType
     application_name: str | None = None
@@ -51,6 +50,16 @@ class IntentInterpretation(BaseModel):
             )
 
         return self
+
+
+class IntentInterpretation(OllamaIntentPayload):
+    original_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaIntentPayloadResult:
+    payload: OllamaIntentPayload
+    duration_ms: float
 
 
 @dataclass(frozen=True, slots=True)

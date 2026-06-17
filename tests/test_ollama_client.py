@@ -15,9 +15,9 @@ from orion.llm.exceptions import (
 )
 from orion.llm.intent_parser import interpret_intent
 from orion.llm.models import (
-    IntentInterpretation,
-    IntentParseResult,
     IntentType,
+    OllamaIntentPayload,
+    OllamaIntentPayloadResult,
 )
 from orion.llm import ollama_client
 from orion.llm.ollama_client import (
@@ -72,7 +72,6 @@ def test_ollama_client_parses_valid_response(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Abre la calculadora",
                         "normalized_text": "abre la calculadora",
                         "intent": "open_application",
                         "application_name": "calculadora",
@@ -86,9 +85,38 @@ def test_ollama_client_parses_valid_response(
         [{"role": "user", "content": "Abre la calculadora"}]
     )
 
+    assert result.payload.intent is IntentType.OPEN_APPLICATION
+    assert result.payload.application_name == "calculadora"
+    assert result.duration_ms >= 0
+
+
+def test_interpret_intent_builds_domain_model_from_ollama_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ollama_client.httpx,
+        "Client",
+        _client_factory(
+            _response(
+                _chat_payload(
+                    {
+                        "normalized_text": "abre la calculadora",
+                        "intent": "open_application",
+                        "application_name": "calculadora",
+                    }
+                )
+            )
+        ),
+    )
+
+    result = interpret_intent(
+        "A abrir calculadora.",
+    )
+
+    assert result.interpretation.original_text == "A abrir calculadora."
+    assert result.interpretation.normalized_text == "abre la calculadora"
     assert result.interpretation.intent is IntentType.OPEN_APPLICATION
     assert result.interpretation.application_name == "calculadora"
-    assert result.duration_ms >= 0
 
 
 def test_ollama_client_rejects_invalid_json(
@@ -122,7 +150,6 @@ def test_ollama_client_rejects_invalid_enum(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Abre la calculadora",
                         "normalized_text": "abre la calculadora",
                         "intent": "open_calculator",
                         "application_name": "calculadora",
@@ -146,7 +173,6 @@ def test_ollama_client_rejects_open_application_without_app(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Abre",
                         "normalized_text": "abre",
                         "intent": "open_application",
                     }
@@ -169,7 +195,6 @@ def test_ollama_client_rejects_clarification_without_question(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Prondo",
                         "normalized_text": "prondo",
                         "intent": "unknown",
                         "needs_clarification": True,
@@ -233,15 +258,14 @@ def test_ollama_client_handles_missing_model(
         OllamaClient().interpret_messages([])
 
 
-def test_ollama_client_preserves_original_text() -> None:
+def test_interpret_intent_preserves_exact_input_text() -> None:
     class FakeClient:
         def interpret_messages(
             self,
             messages: list[dict[str, str]],
-        ) -> IntentParseResult:
-            return IntentParseResult(
-                interpretation=IntentInterpretation(
-                    original_text="Abre la calculadora",
+        ) -> OllamaIntentPayloadResult:
+            return OllamaIntentPayloadResult(
+                payload=OllamaIntentPayload(
                     normalized_text="abre la calculadora",
                     intent=IntentType.OPEN_APPLICATION,
                     application_name="calculadora",
@@ -250,22 +274,23 @@ def test_ollama_client_preserves_original_text() -> None:
             )
 
     result = interpret_intent(
-        "Abre la calculadora",
+        "A abrir calculadora.",
         client=FakeClient(),
     )
 
-    assert result.interpretation.original_text == "Abre la calculadora"
+    assert result.interpretation.original_text == "A abrir calculadora."
+    assert result.interpretation.normalized_text == "abre la calculadora"
+    assert result.interpretation.intent is IntentType.OPEN_APPLICATION
 
 
-def test_ollama_client_rejects_modified_original_text() -> None:
+def test_interpret_intent_preserves_case_accents_and_punctuation() -> None:
     class FakeClient:
         def interpret_messages(
             self,
             messages: list[dict[str, str]],
-        ) -> IntentParseResult:
-            return IntentParseResult(
-                interpretation=IntentInterpretation(
-                    original_text="abre la calculadora",
+        ) -> OllamaIntentPayloadResult:
+            return OllamaIntentPayloadResult(
+                payload=OllamaIntentPayload(
                     normalized_text="abre la calculadora",
                     intent=IntentType.OPEN_APPLICATION,
                     application_name="calculadora",
@@ -273,10 +298,38 @@ def test_ollama_client_rejects_modified_original_text() -> None:
                 duration_ms=12.0,
             )
 
+    text = "Ábreme, por favor, la Calculadora."
+    result = interpret_intent(
+        text,
+        client=FakeClient(),
+    )
+
+    assert result.interpretation.original_text == text
+
+
+def test_ollama_response_cannot_overwrite_original_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ollama_client.httpx,
+        "Client",
+        _client_factory(
+            _response(
+                _chat_payload(
+                    {
+                        "original_text": "texto alterado",
+                        "normalized_text": "abre la calculadora",
+                        "intent": "open_application",
+                        "application_name": "calculadora",
+                    }
+                )
+            )
+        ),
+    )
+
     with pytest.raises(OllamaInvalidResponseError):
-        interpret_intent(
-            "Abre la calculadora",
-            client=FakeClient(),
+        OllamaClient().interpret_messages(
+            [{"role": "user", "content": "A abrir calculadora."}]
         )
 
 
@@ -297,7 +350,6 @@ def test_ollama_client_measures_duration(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Hola Orion",
                         "normalized_text": "hola orion",
                         "intent": "conversation",
                         "assistant_reply": "Hola.",
@@ -324,7 +376,6 @@ def test_ollama_client_sends_required_payload(
             _response(
                 _chat_payload(
                     {
-                        "original_text": "Hola Orion",
                         "normalized_text": "hola orion",
                         "intent": "conversation",
                         "assistant_reply": "Hola.",
@@ -349,7 +400,11 @@ def test_ollama_client_sends_required_payload(
     assert payload["keep_alive"] == "10m"
     assert payload["options"] == {"temperature": 0}
     assert isinstance(payload["format"], dict)
-    assert payload["format"]["title"] == "IntentInterpretation"
+    assert payload["format"]["title"] == "OllamaIntentPayload"
+    assert "original_text" not in json.dumps(
+        payload["format"],
+        ensure_ascii=False,
+    )
 
 
 class _FakeResponse:
