@@ -7,7 +7,10 @@ from time import perf_counter
 
 from orion.config import settings
 from orion.execution.service import ExecutionService
-from orion.llm.exceptions import OllamaError
+from orion.llm.exceptions import (
+    OllamaConfigurationError,
+    OllamaError,
+)
 from orion.llm.intent_parser import interpret_intent
 from orion.llm.models import (
     IntentInterpretation,
@@ -79,6 +82,7 @@ class VoicePipelineResult:
     message: str
     execution_attempted: bool = False
     audit_record: VoicePipelineAuditRecord | None = None
+    error_stage: str | None = None
 
 
 class VoicePipeline:
@@ -131,6 +135,7 @@ class VoicePipeline:
                 capture_mode=capture_mode,
                 success=False,
                 message=f"Fallo la captura o transcripcion: {error}",
+                error_stage="capture_transcription",
             )
 
         _merge_voice_timings(
@@ -158,6 +163,7 @@ class VoicePipeline:
                 capture_mode=capture_mode,
                 success=False,
                 message=voice_result.message,
+                error_stage="capture_transcription",
             )
 
         if not transcript:
@@ -179,6 +185,7 @@ class VoicePipeline:
                     "La transcripcion esta vacia; "
                     "no ejecutare ninguna accion."
                 ),
+                error_stage="capture_transcription",
             )
 
         llm_started_at = perf_counter()
@@ -206,6 +213,14 @@ class VoicePipeline:
                 capture_mode=capture_mode,
                 success=False,
                 message=f"Fallo Ollama: {error}",
+                error_stage=(
+                    "configuration"
+                    if isinstance(
+                        error,
+                        OllamaConfigurationError,
+                    )
+                    else "llm"
+                ),
             )
         except Exception as error:
             timings["llm"] = _milliseconds(
@@ -226,6 +241,7 @@ class VoicePipeline:
                 capture_mode=capture_mode,
                 success=False,
                 message=f"Fallo la interpretacion: {error}",
+                error_stage="application",
             )
 
         interpretation = llm_result.interpretation
@@ -307,6 +323,9 @@ class VoicePipeline:
                 tool_result=tool_result,
                 execution_enabled=execution_enabled,
             ),
+            error_stage=_result_error_stage(
+                tool_result=tool_result,
+            ),
         )
 
     def _finalize(
@@ -322,6 +341,7 @@ class VoicePipeline:
         capture_mode: str,
         success: bool,
         message: str,
+        error_stage: str | None = None,
     ) -> VoicePipelineResult:
         audit_record = _build_audit_record(
             capture_mode=capture_mode,
@@ -351,6 +371,7 @@ class VoicePipeline:
             message=message,
             execution_attempted=execution_attempted,
             audit_record=audit_record,
+            error_stage=error_stage,
         )
 
 
@@ -513,6 +534,15 @@ def _result_message(
         return "Simulacion: ejecucion real deshabilitada."
 
     return "Ejecucion no intentada."
+
+
+def _result_error_stage(
+    tool_result: ToolResult | None,
+) -> str | None:
+    if tool_result is not None and not tool_result.success:
+        return "execution"
+
+    return None
 
 
 def _milliseconds(
