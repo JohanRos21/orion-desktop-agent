@@ -25,10 +25,11 @@ data/*.db
 data/*.sqlite3
 
 models/
+local_models/wakeword/
 *.wav
 
 .venv-py314/
 .pytest_cache/
 __pycache__/
 *.py[cod]
-.env
+.env 

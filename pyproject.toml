@@ -12,6 +12,9 @@ dependencies = [
     "httpx",
     "sounddevice",
     "numpy",
+    "onnxruntime>=1.17",
+    "openwakeword==0.6.0",
+    "soxr>=1.1.0,<2",
     "nvidia-cudnn-cu12>=9,<10; platform_system == 'Windows'",
     "pydantic",
 ]
