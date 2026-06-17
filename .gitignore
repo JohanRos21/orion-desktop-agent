@@ -23,3 +23,12 @@ Thumbs.db
 logs/*.log
 data/*.db
 data/*.sqlite3
+
+models/
+*.wav
+
+.venv-py314/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.env
