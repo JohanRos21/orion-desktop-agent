@@ -25,7 +25,7 @@ data/*.db
 data/*.sqlite3
 
 models/
-local_models/wakeword/
+local_models/
 *.wav
 
 .venv-py314/
