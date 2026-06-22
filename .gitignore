@@ -27,6 +27,12 @@ data/*.sqlite3
 models/
 local_models/
 *.wav
+*.onnx
+*.pt
+*.npy
+*.npz
+training/wakeword/datasets/
+training/wakeword/artifacts/
 
 .venv-py314/
 .pytest_cache/
